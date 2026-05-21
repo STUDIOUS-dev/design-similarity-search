@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Design Search Engine</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+
+<h1>Raaga Design Similarity Search</h1>
+
+<form id="searchForm" enctype="multipart/form-data">
+
+    <input type="file" name="file" id="fileInput" required>
+
+    <button type="submit" id="searchBtn">Search</button>
+
+</form>
+
+<div id="loading" style="display:none; margin-top: 20px;">
+    <p>Searching for similar designs...</p>
+</div>
+
+<div class="results" id="resultsContainer">
+</div>
+
+<script>
+    const form = document.getElementById('searchForm');
+    const resultsContainer = document.getElementById('resultsContainer');
+    const loading = document.getElementById('loading');
+    const searchBtn = document.getElementById('searchBtn');
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const formData = new FormData(form);
+
+        // Clear previous results and show loading
+        resultsContainer.innerHTML = '';
+        loading.style.display = 'block';
+        searchBtn.disabled = true;
+        searchBtn.textContent = 'Searching...';
+
+        try {
+            const response = await fetch('/search', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+
+            loading.style.display = 'none';
+            searchBtn.disabled = false;
+            searchBtn.textContent = 'Search';
+
+            if (data.results && data.results.length > 0) {
+                data.results.forEach(result => {
+                    const card = document.createElement('div');
+                    card.className = 'card';
+
+                    card.innerHTML = `
+                        <img src="/${result.image_path}" width="200">
+                        <h3>${result.class_name}</h3>
+                        <p>Similarity: ${result.score.toFixed(3)}</p>
+                    `;
+
+                    resultsContainer.appendChild(card);
+                });
+            } else {
+                resultsContainer.innerHTML = '<p>No results found.</p>';
+            }
+        } catch (error) {
+            loading.style.display = 'none';
+            searchBtn.disabled = false;
+            searchBtn.textContent = 'Search';
+            resultsContainer.innerHTML = '<p style="color:red;">Error: ' + error.message + '</p>';
+        }
+    });
+</script>
+
+</body>
+</html>
