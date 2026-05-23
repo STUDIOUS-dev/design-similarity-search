@@ -13,6 +13,5 @@ jobs:
       - uses: huggingface/hub-sync@v0.1.0
         with:
           github_repo_id: ${{ github.repository }}
-          huggingface_repo_id: lljbhilbhlbhi/raaga-design-match
+          huggingface_repo_id: lljbhilbhlbhi/design-similarity-search
           hf_token: ${{ secrets.HF_TOKEN }}
-          space_sdk: docker
