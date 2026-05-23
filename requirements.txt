@@ -3,7 +3,8 @@ uvicorn[standard]
 python-multipart
 jinja2
 torch
-open-clip-torch
+timm
+torchvision
 faiss-cpu
 numpy
 Pillow

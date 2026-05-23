@@ -1,82 +1,254 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Design Search Engine</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Raaga — Textile Design Similarity Search</title>
+    <meta name="description" content="Upload a textile or fabric image and find visually similar motif designs using AI-powered DINOv2 pattern retrieval.">
+    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎨</text></svg>">
 </head>
 
 <body>
+    <div class="container">
 
-<h1>Raaga Design Similarity Search</h1>
+        <!-- ====== Header ====== -->
+        <header class="header">
+            <h1 class="header__brand">Raaga</h1>
+            <p class="header__tagline">AI-Powered Textile <span>Design Similarity Search</span></p>
+        </header>
 
-<form id="searchForm" enctype="multipart/form-data">
+        <!-- ====== Upload Section ====== -->
+        <section class="upload-section" aria-label="Image upload">
+            <form id="searchForm" enctype="multipart/form-data">
+                <!-- Drop zone -->
+                <div class="dropzone" id="dropzone">
+                    <!-- Default state -->
+                    <div class="dropzone__default" id="dropzoneDefault">
+                        <span class="dropzone__icon">📷</span>
+                        <p class="dropzone__text">Drag &amp; drop your textile image here</p>
+                        <p class="dropzone__subtext">or <strong id="browseBtn">browse files</strong> &nbsp;·&nbsp; JPEG, PNG supported</p>
+                    </div>
 
-    <input type="file" name="file" id="fileInput" required>
+                    <!-- Preview state -->
+                    <div class="preview-container" id="previewContainer">
+                        <img class="preview-image" id="previewImage" alt="Upload preview">
+                        <p class="preview-filename">
+                            <span id="previewName"></span>
+                            <button type="button" class="change-btn" id="changeBtn">Change</button>
+                        </p>
+                    </div>
+                </div>
 
-    <button type="submit" id="searchBtn">Search</button>
+                <input type="file" name="file" id="fileInput" class="file-input" accept="image/*" required>
+                <button type="submit" class="search-btn" id="searchBtn" disabled>Search Similar Designs</button>
+            </form>
+        </section>
 
-</form>
+        <!-- ====== Loading State ====== -->
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p class="loading__text">Analyzing textile patterns…</p>
+        </div>
 
-<div id="loading" style="display:none; margin-top: 20px;">
-    <p>Searching for similar designs...</p>
-</div>
+        <!-- ====== Results ====== -->
+        <section class="results-section" id="resultsSection" style="display:none;" aria-label="Search results">
+            <div class="results-header">
+                <h2 class="results-header__title">Similar Designs</h2>
+                <span class="results-header__count" id="resultsCount"></span>
+            </div>
+            <div class="results-grid" id="resultsGrid"></div>
+        </section>
 
-<div class="results" id="resultsContainer">
-</div>
+        <!-- ====== Footer ====== -->
+        <footer class="footer">
+            Powered by <a href="https://github.com/facebookresearch/dinov2" target="_blank" rel="noopener">DINOv2</a>
+            &nbsp;·&nbsp; Patch-based motif retrieval
+        </footer>
 
-<script>
-    const form = document.getElementById('searchForm');
-    const resultsContainer = document.getElementById('resultsContainer');
-    const loading = document.getElementById('loading');
-    const searchBtn = document.getElementById('searchBtn');
+    </div>
 
-    form.addEventListener('submit', async (e) => {
-        e.preventDefault();
+    <script>
+    (() => {
+        // --- DOM refs ---
+        const form            = document.getElementById('searchForm');
+        const fileInput       = document.getElementById('fileInput');
+        const dropzone        = document.getElementById('dropzone');
+        const dropzoneDefault = document.getElementById('dropzoneDefault');
+        const previewContainer= document.getElementById('previewContainer');
+        const previewImage    = document.getElementById('previewImage');
+        const previewName     = document.getElementById('previewName');
+        const browseBtn       = document.getElementById('browseBtn');
+        const changeBtn       = document.getElementById('changeBtn');
+        const searchBtn       = document.getElementById('searchBtn');
+        const loading         = document.getElementById('loading');
+        const resultsSection  = document.getElementById('resultsSection');
+        const resultsGrid     = document.getElementById('resultsGrid');
+        const resultsCount    = document.getElementById('resultsCount');
 
-        const formData = new FormData(form);
-
-        // Clear previous results and show loading
-        resultsContainer.innerHTML = '';
-        loading.style.display = 'block';
-        searchBtn.disabled = true;
-        searchBtn.textContent = 'Searching...';
-
-        try {
-            const response = await fetch('/search', {
-                method: 'POST',
-                body: formData
-            });
-
-            const data = await response.json();
-
-            loading.style.display = 'none';
-            searchBtn.disabled = false;
-            searchBtn.textContent = 'Search';
-
-            if (data.results && data.results.length > 0) {
-                data.results.forEach(result => {
-                    const card = document.createElement('div');
-                    card.className = 'card';
-
-                    card.innerHTML = `
-                        <img src="/${result.image_path}" width="200">
-                        <h3>${result.class_name}</h3>
-                        <p>Similarity: ${result.score.toFixed(3)}</p>
-                    `;
-
-                    resultsContainer.appendChild(card);
-                });
-            } else {
-                resultsContainer.innerHTML = '<p>No results found.</p>';
+        // --- Drag & Drop ---
+        ['dragenter', 'dragover'].forEach(evt =>
+            dropzone.addEventListener(evt, e => {
+                e.preventDefault();
+                dropzone.classList.add('drag-active');
+            })
+        );
+        ['dragleave', 'drop'].forEach(evt =>
+            dropzone.addEventListener(evt, e => {
+                e.preventDefault();
+                dropzone.classList.remove('drag-active');
+            })
+        );
+        dropzone.addEventListener('drop', e => {
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                fileInput.files = files;
+                showPreview(files[0]);
             }
-        } catch (error) {
-            loading.style.display = 'none';
-            searchBtn.disabled = false;
-            searchBtn.textContent = 'Search';
-            resultsContainer.innerHTML = '<p style="color:red;">Error: ' + error.message + '</p>';
-        }
-    });
-</script>
+        });
 
+        // --- Click to browse ---
+        dropzone.addEventListener('click', () => {
+            if (!previewContainer.classList.contains('visible')) {
+                fileInput.click();
+            }
+        });
+        browseBtn.addEventListener('click', e => {
+            e.stopPropagation();
+            fileInput.click();
+        });
+        changeBtn.addEventListener('click', e => {
+            e.stopPropagation();
+            fileInput.click();
+        });
+
+        // --- File input change ---
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files.length > 0) {
+                showPreview(fileInput.files[0]);
+            }
+        });
+
+        function showPreview(file) {
+            const reader = new FileReader();
+            reader.onload = e => {
+                previewImage.src = e.target.result;
+                previewName.textContent = file.name;
+                dropzoneDefault.style.display = 'none';
+                previewContainer.classList.add('visible');
+                dropzone.classList.add('has-preview');
+                searchBtn.disabled = false;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // --- Form submit ---
+        form.addEventListener('submit', async e => {
+            e.preventDefault();
+
+            const formData = new FormData(form);
+
+            // UI state: loading
+            resultsSection.style.display = 'none';
+            resultsGrid.innerHTML = '';
+            loading.classList.add('visible');
+            searchBtn.disabled = true;
+            searchBtn.textContent = 'Searching…';
+
+            try {
+                const resp = await fetch('/search', { method: 'POST', body: formData });
+                const data = await resp.json();
+
+                loading.classList.remove('visible');
+                searchBtn.disabled = false;
+                searchBtn.textContent = 'Search Similar Designs';
+
+                if (!resp.ok) {
+                    showError(data.error || 'Something went wrong.');
+                    return;
+                }
+
+                if (data.results && data.results.length > 0) {
+                    renderResults(data.results);
+                } else {
+                    showEmpty();
+                }
+            } catch (err) {
+                loading.classList.remove('visible');
+                searchBtn.disabled = false;
+                searchBtn.textContent = 'Search Similar Designs';
+                showError('Network error: ' + err.message);
+            }
+        });
+
+        // --- Render results ---
+        function renderResults(results) {
+            resultsGrid.innerHTML = '';
+            resultsCount.textContent = `${results.length} match${results.length !== 1 ? 'es' : ''} found`;
+            resultsSection.style.display = 'block';
+
+            results.forEach((r, i) => {
+                const pct = Math.min(Math.round(r.score * 100), 100);
+
+                const card = document.createElement('article');
+                card.className = 'result-card';
+
+                card.innerHTML = `
+                    <div class="result-card__image-wrapper">
+                        <img class="result-card__image"
+                             src="/${r.image_path}"
+                             alt="${r.class_name} textile design"
+                             loading="lazy">
+                        <div class="result-card__rank">#${i + 1}</div>
+                    </div>
+                    <div class="result-card__body">
+                        <div class="result-card__class">
+                            ${r.class_name}
+                            <span class="result-card__class-badge">Design</span>
+                        </div>
+                        <div class="score-bar">
+                            <div class="score-bar__header">
+                                <span class="score-bar__label">Similarity</span>
+                                <span class="score-bar__value">${r.score.toFixed(4)}</span>
+                            </div>
+                            <div class="score-bar__track">
+                                <div class="score-bar__fill" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                resultsGrid.appendChild(card);
+
+                // Animate score bar fill after card is in DOM
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        card.querySelector('.score-bar__fill').style.width = pct + '%';
+                    });
+                });
+            });
+        }
+
+        function showEmpty() {
+            resultsGrid.innerHTML = `
+                <div class="empty-state" style="grid-column: 1 / -1">
+                    <span class="empty-state__icon">🔍</span>
+                    <p class="empty-state__text">No similar designs found. Try a different image.</p>
+                </div>`;
+            resultsCount.textContent = '';
+            resultsSection.style.display = 'block';
+        }
+
+        function showError(msg) {
+            resultsGrid.innerHTML = `
+                <div class="error-state" style="grid-column: 1 / -1">
+                    <span class="error-state__icon">⚠️</span>
+                    <p class="error-state__text">${msg}</p>
+                </div>`;
+            resultsCount.textContent = '';
+            resultsSection.style.display = 'block';
+        }
+    })();
+    </script>
 </body>
 </html>
